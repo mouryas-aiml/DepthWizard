@@ -4,7 +4,6 @@ import {
   AccuracyIcon,
   DatasetIcon,
   ElevationModelIcon,
-  ExportIcon,
   TerrainIcon,
   UploadIcon,
   DepthWizardLogo,
@@ -161,7 +160,7 @@ export function DashboardView({
     { code: "05", label: "Elevation Map", desc: "Metric DSM or Relative rDSM surface", ready: geometryReady, page: "Elevation" },
     { code: "06", label: "3D Terrain", desc: "Textured WebGL mesh with multi-mode flythrough", ready: meshReady, page: "Terrain" },
     { code: "07", label: "Terrain Derivatives", desc: "Slope, aspect, contours & cross-sections", ready: geometryReady, page: "Intelligence" },
-    { code: "08", label: "Export Products", desc: "GeoTIFF, GLB LOD pyramid, provenance audit", ready: geometryReady, page: "Exports" },
+    { code: "08", label: "Accuracy & Residuals", desc: "LiDAR / ground truth reference validation & residual statistics", ready: validationReady, page: "Accuracy" },
   ];
 
   return (

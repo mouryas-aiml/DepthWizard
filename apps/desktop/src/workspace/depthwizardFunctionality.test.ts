@@ -8,20 +8,19 @@ function source(relative: string): string {
 }
 
 describe("DepthWizard SIH 26175 Complete Functionality & Rebranding Audit", () => {
-  it("Core Pipeline: Left navigation rail contains exactly 11 streamlined SIH 26175 pipeline stages", () => {
-    expect(SIDEBAR_PAGES).toHaveLength(11);
+  it("Core Pipeline: Navigation rail contains exactly 10 streamlined SIH 26175 pipeline stages", () => {
+    expect(SIDEBAR_PAGES).toHaveLength(10);
     const ids = SIDEBAR_PAGES.map((p) => p.id);
     expect(ids).toEqual([
+      "Dashboard",
       "Terrain",
+      "Dataset",
       "Import",
       "Inspector",
       "Reconstruction",
+      "Accuracy",
       "Elevation",
       "Intelligence",
-      "Accuracy",
-      "Exports",
-      "Dashboard",
-      "Dataset",
       "Settings",
     ]);
 

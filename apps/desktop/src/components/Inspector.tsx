@@ -99,10 +99,8 @@ export function Inspector({
   const georeferenced = Boolean(metadata?.crs);
   const sourceName = metadata?.path ? fileName(metadata.path) : "—";
   const showValidation = activeTool === "Validation";
-  const showExport = activeTool === "Export";
   const benchmarkDataset = validationEvidence?.dataset ? fileName(validationEvidence.dataset) : "—";
   const referenceName = projectValidation?.reference_path ? fileName(projectValidation.reference_path) : "—";
-  const exportName = projectExport?.bundle_path ? fileName(projectExport.bundle_path) : "—";
   const renderFailed = terrainRenderState.phase === "error";
   const terrainStageState: StageState = rendererReady
     ? "complete"
@@ -145,7 +143,6 @@ export function Inspector({
             state: terrainStageState,
             detail: rendererReady ? `rendered LOD ${meshLod}` : renderFailed ? "renderer failed" : meshArtifactReady ? "loading renderer" : "",
           },
-          { label: "Export", state: projectExport ? "complete" : "pending", detail: projectExport ? byteLabel(projectExport.bundle_bytes) : "20.93 MiB" },
         ]} />
       </section>
 
@@ -248,34 +245,6 @@ export function Inspector({
             <div className="dw-validation-empty">
               <strong>Reference DSM required</strong>
               <p>Load LiDAR or another metric reference surface to compute residuals, RMSE, MAE, bias, P95, correlation and slope diagnostics.</p>
-            </div>
-          )}
-        </section>
-      )}
-
-      {showExport && (
-        <section className="dw-section">
-          <div className="dw-section-title">Scientific export</div>
-          {projectExport ? (
-            <>
-              <dl className="dw-property-list">
-                <div className="dw-property"><dt>Bundle</dt><dd title={projectExport.bundle_path}>{exportName}</dd></div>
-                <div className="dw-property"><dt>Size</dt><dd>{byteLabel(projectExport.bundle_bytes)}</dd></div>
-                <div className="dw-property"><dt>Artifacts</dt><dd>{projectExport.files.length}</dd></div>
-                <div className="dw-property"><dt>Source bytes</dt><dd>{projectExport.include_source ? "included" : "excluded"}</dd></div>
-                <div className="dw-property"><dt>Mesh</dt><dd>{projectExport.include_mesh ? "included" : "excluded"}</dd></div>
-                <div className="dw-property"><dt>Validation</dt><dd>{projectExport.include_validation ? "included" : "excluded"}</dd></div>
-                <div className="dw-property"><dt>SHA-256</dt><dd title={projectExport.bundle_sha256}>{projectExport.bundle_sha256.slice(0, 16)}…</dd></div>
-              </dl>
-              <div className="dw-validation-empty">
-                <strong>Transport derivative only</strong>
-                <p>The ZIP re-hashes persisted products before packaging. Export does not rerun reconstruction, calibration, validation, or alter model evidence.</p>
-              </div>
-            </>
-          ) : (
-            <div className="dw-validation-empty">
-              <strong>Export is deterministic</strong>
-              <p>Use Export to create a hash-audited ZIP from the persisted project products. Source imagery remains excluded by default.</p>
             </div>
           )}
         </section>

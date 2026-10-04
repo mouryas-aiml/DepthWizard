@@ -35,10 +35,13 @@ const PENINSULAR_REGIONS = [
 const ALL_INDIAN_REGIONS = [...HIMALAYAN_REGIONS, ...PENINSULAR_REGIONS];
 
 describe("Indian Mountain Dataset Switching & Scene Inspector Verification", () => {
-  it("ToolRail: '01 — 3D Terrain Flythrough' is Option 1 and Heatmap is removed", () => {
-    expect(SIDEBAR_PAGES[0].id).toBe("Terrain");
-    expect(SIDEBAR_PAGES[0].label).toContain("01 — 3D Terrain Flythrough");
+  it("ToolRail: '01 — DepthWizard Overview (Dashboard)' is Option 1, '02 — 3D Terrain Flythrough' is Option 2, and Exports is removed", () => {
+    expect(SIDEBAR_PAGES[0].id).toBe("Dashboard");
+    expect(SIDEBAR_PAGES[0].label).toContain("01 — DepthWizard Overview (Dashboard)");
+    expect(SIDEBAR_PAGES[1].id).toBe("Terrain");
+    expect(SIDEBAR_PAGES[1].label).toContain("02 — 3D Terrain Flythrough");
     const ids = SIDEBAR_PAGES.map((p) => p.id);
+    expect(ids).not.toContain("Exports");
     expect(ids).not.toContain("Heatmap");
   });
 

@@ -1419,7 +1419,6 @@ export function App() {
         url = "/sample_project/project-manifest.json";
       }
       setProjectExport(report);
-      setActiveTool("Exports");
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = bundleName(report);
@@ -1582,7 +1581,7 @@ export function App() {
   const disabledTools = useMemo(() => {
     const result = new Set<string>();
     if (!geometryReady) {
-      for (const tool of ["Measure", "Profiles", "Export"]) result.add(tool);
+      for (const tool of ["Measure", "Profiles"]) result.add(tool);
     }
     if (!calibrationReady) {
       result.add("Structures");
@@ -1765,15 +1764,6 @@ export function App() {
           )}
 
           <button
-            className="dw-btn dw-btn--primary"
-            onClick={() => void exportProject()}
-            disabled={processing || exporting || !geometryReady}
-            title="Build and download a hash-audited ZIP. Source imagery is excluded by default."
-          >
-            {exporting ? "Packaging…" : projectExport ? "Export again" : "Export Products"}
-          </button>
-
-          <button
             className="dw-btn"
             onClick={() => setActiveTool("Settings")}
             title="DepthWizard System Settings"
@@ -1789,8 +1779,6 @@ export function App() {
           setActiveTool(tool);
           if (tool === "Import") {
             void importImagery();
-          } else if (tool === "Exports") {
-            void exportProject();
           } else if (tool === "Terrain") {
             setActiveView("3D Terrain");
             setActiveLayer("Texture");

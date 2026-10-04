@@ -5,7 +5,6 @@ import {
   DashboardIcon,
   DatasetIcon,
   ElevationModelIcon,
-  ExportIcon,
   ImageInspectorIcon,
   SettingsIcon,
   TerrainIcon,
@@ -13,17 +12,16 @@ import {
 } from "./icons";
 
 export const SIDEBAR_PAGES = [
-  { id: "Terrain", label: "01 — 3D Terrain Flythrough", icon: TerrainIcon },
-  { id: "Import", label: "02 — Upload & Ingest Imagery", icon: UploadIcon },
-  { id: "Inspector", label: "03 — Image Quality & Metadata", icon: ImageInspectorIcon },
-  { id: "Reconstruction", label: "04 — Monocular Depth Estimation", icon: AiReconstructionIcon },
-  { id: "Elevation", label: "05 — Scale Calibration & DSM", icon: ElevationModelIcon },
-  { id: "Intelligence", label: "06 — Terrain Analysis Derivatives", icon: AnalysisIcon },
+  { id: "Dashboard", label: "01 — DepthWizard Overview (Dashboard)", icon: DashboardIcon },
+  { id: "Terrain", label: "02 — 3D Terrain Flythrough", icon: TerrainIcon },
+  { id: "Dataset", label: "03 — Indian Mountain Dataset", icon: DatasetIcon },
+  { id: "Import", label: "04 — Upload & Ingest Imagery", icon: UploadIcon },
+  { id: "Inspector", label: "05 — Image Quality & Metadata", icon: ImageInspectorIcon },
+  { id: "Reconstruction", label: "06 — Monocular Depth Estimation", icon: AiReconstructionIcon },
   { id: "Accuracy", label: "07 — Accuracy & Residuals", icon: AccuracyIcon },
-  { id: "Exports", label: "08 — Geospatial Exports", icon: ExportIcon },
-  { id: "Dashboard", label: "DepthWizard Pipeline Overview", icon: DashboardIcon },
-  { id: "Dataset", label: "Indian Mountain Datasets", icon: DatasetIcon },
-  { id: "Settings", label: "System Settings", icon: SettingsIcon },
+  { id: "Elevation", label: "08 — Scale Calibration & DSM", icon: ElevationModelIcon },
+  { id: "Intelligence", label: "09 — Terrain Analysis Derivations", icon: AnalysisIcon },
+  { id: "Settings", label: "10 — Settings", icon: SettingsIcon },
 ] as const;
 
 export type SidebarPageId = (typeof SIDEBAR_PAGES)[number]["id"];
