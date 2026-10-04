@@ -37,6 +37,7 @@ import {
   loadGamusSample,
   resolveDatasetSpec,
   extractProjectFolder,
+  resolveStaticMeshUrl,
   KNOWN_DATASETS,
 } from "./api";
 import { DatasetExplorer } from "./components/DatasetExplorer";
@@ -297,7 +298,9 @@ export function App() {
   const [rasterViewState, setRasterViewState] = useState<RasterViewState>(DEFAULT_RASTER_VIEW_STATE);
   const [recentProjects, setRecentProjects] = useState<string[]>(readRecentProjects);
   const lodPressureRef = useRef(0);
-  const meshUrl: string | undefined = demoMode ? "/demo/terrain.glb" : (projectMeshUrl ?? (projectDir ? "/sample_project/mesh/terrain-lod0.glb" : undefined));
+  const meshUrl: string | undefined = demoMode
+    ? "/demo/terrain.glb"
+    : (projectMeshUrl ?? (projectDir ? resolveStaticMeshUrl(projectDir, meshLod) : undefined));
 
   useEffect(() => {
     setRelativeHorizontalScaleInput("");
@@ -557,7 +560,7 @@ export function App() {
       cancelled = true;
       if (createdUrl) URL.revokeObjectURL(createdUrl);
     };
-  }, [demoMode, meshLod, projectDir, projectMesh?.build_config_sha256]);
+  }, [demoMode, meshLod, projectDir, projectMesh?.build_config_sha256, projectMesh?.project_id]);
 
   useEffect(() => {
     setTerrainOverlayRenderState(emptyTerrainOverlayState);
@@ -805,7 +808,9 @@ export function App() {
       try {
         nextMetadata = await inspectRaster(manifest.source_path || selectedDir);
       } catch (sourceError) {
-        const persistedSurface = manifest.artifacts.dsm?.path ?? manifest.artifacts.rdsm?.path;
+        const dsmPath = typeof manifest.artifacts?.dsm === "string" ? manifest.artifacts.dsm : manifest.artifacts?.dsm?.path;
+        const rdsmPath = typeof manifest.artifacts?.rdsm === "string" ? manifest.artifacts.rdsm : manifest.artifacts?.rdsm?.path;
+        const persistedSurface = dsmPath ?? rdsmPath;
         if (!persistedSurface) throw sourceError;
         const surfaceMetadata = await inspectRaster(persistedSurface);
         nextMetadata = {
@@ -868,7 +873,7 @@ export function App() {
         setActiveLayer("Texture");
       }
     } catch {
-      await loadExistingProject("data/sample_project");
+      await loadExistingProject("/sample_project");
       if (navigateToTerrain) {
         setActiveTool("Terrain");
         setActiveView("3D Terrain");
@@ -1160,26 +1165,29 @@ export function App() {
         await new Promise((r) => setTimeout(r, 600)); // Stage 5: Terrain Mesh synthesis
 
         const demoResult = await loadDemoProject();
+        const spec = metadata.path ? resolveDatasetSpec(metadata.path) : null;
+        const targetDir = spec ? `/projects/${spec.id}` : (demoResult.project_dir || "/sample_project");
         const manifest: ProjectManifest = {
           ...demoResult.manifest,
+          project_id: spec?.id ?? demoResult.manifest.project_id,
           source_path: metadata.path,
           status: "complete",
         };
 
-        setProjectDir(selectedDir || demoResult.project_dir);
+        setProjectDir(targetDir);
         setProjectManifest(manifest);
-        setProjectJob(reopenedJobState(manifest, selectedDir || demoResult.project_dir));
+        setProjectJob(reopenedJobState(manifest, targetDir));
 
         const [validation, mesh, exported] = await Promise.all([
-          getProjectValidation(demoResult.project_dir).catch(() => null),
-          getProjectMesh(demoResult.project_dir).catch(() => null),
-          getProjectExport(demoResult.project_dir).catch(() => null),
+          getProjectValidation(targetDir).catch(() => null),
+          getProjectMesh(targetDir).catch(() => null),
+          getProjectExport(targetDir).catch(() => null),
         ]);
 
         setProjectValidation(validation);
         setProjectMesh(mesh);
         setProjectExport(exported);
-        rememberProject(selectedDir || demoResult.project_dir);
+        rememberProject(targetDir);
 
         setActiveTool("Terrain");
         setActiveView("3D Terrain");

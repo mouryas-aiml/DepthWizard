@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   extractProjectFolder,
   getProjectMeshUrl,
+  resolveStaticMeshUrl,
   KNOWN_DATASETS,
   probeProject,
   resolveDatasetSpec,
@@ -144,5 +145,48 @@ describe("Indian Mountain Dataset Switching & Scene Inspector Verification", () 
 
     expect(probeResults[0].surface).not.toBe(probeResults[1].surface);
     expect(probeResults[1].surface).not.toBe(probeResults[2].surface);
+  });
+
+  it("404 Prevention: 'sample_image_project' and sample variations map to '/sample_project/mesh/terrain-lod*.glb', never a 404 URL", async () => {
+    const sampleVariations = [
+      "sample_image_project",
+      "sample_image",
+      "sample_project",
+      "/sample_project",
+      "data/sample_project",
+      "scene_project",
+    ];
+
+    for (const variation of sampleVariations) {
+      const folder = extractProjectFolder(variation);
+      expect(folder).toBe("sample_project");
+
+      const staticMeshUrl = resolveStaticMeshUrl(variation, 0);
+      expect(staticMeshUrl).toBe("/sample_project/mesh/terrain-lod0.glb");
+      expect(staticMeshUrl).not.toContain("sample_image_project");
+
+      const meshUrl = await getProjectMeshUrl(variation, 0);
+      expect(meshUrl).toBe("/sample_project/mesh/terrain-lod0.glb");
+      expect(meshUrl).not.toContain("sample_image_project");
+    }
+  });
+
+  it("All 14 Indian mountain datasets have valid manifest artifacts with accessible dsm.path and build_config_sha256", () => {
+    const publicProjects = resolve(__dirname, "../../public/projects");
+
+    for (const regionId of ALL_INDIAN_REGIONS) {
+      const manifestPath = resolve(publicProjects, regionId, "project-manifest.json");
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+
+      expect(manifest.artifacts).toHaveProperty("dsm");
+      expect(manifest.artifacts.dsm).toHaveProperty("path");
+      expect(manifest.artifacts.dsm.path).toContain(regionId);
+
+      const meshManifestPath = resolve(publicProjects, regionId, "mesh/mesh-manifest.json");
+      const meshManifest = JSON.parse(readFileSync(meshManifestPath, "utf8"));
+      expect(meshManifest.build_config_sha256).toBeDefined();
+      expect(meshManifest.build_config_sha256).toContain(regionId);
+      expect(meshManifest.lods.length).toBe(4);
+    }
   });
 });

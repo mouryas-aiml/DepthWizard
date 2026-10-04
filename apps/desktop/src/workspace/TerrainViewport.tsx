@@ -542,66 +542,91 @@ export function TerrainViewport({
       );
     };
 
-    loader.load(
-      meshUrl,
-      (gltf) => {
-        if (disposed) {
-          disposeObject3D(gltf.scene);
-          return;
+    const onModelLoaded = (gltf: any) => {
+      if (disposed) {
+        disposeObject3D(gltf.scene);
+        return;
+      }
+      const model = gltf.scene as THREE.Object3D;
+      loaded = model;
+      terrainMeshes = [];
+      let geometryVertices = 0;
+      model.traverse((object) => {
+        if (object instanceof THREE.Mesh) {
+          terrainMeshes.push(object);
+          originalMaterials.set(object, object.material);
+          const position = object.geometry.getAttribute("position");
+          geometryVertices += position?.count ?? 0;
         }
-        loaded = gltf.scene;
+      });
+      if (terrainMeshes.length === 0 || geometryVertices < 3) {
+        disposeObject3D(model);
+        loaded = undefined;
         terrainMeshes = [];
-        let geometryVertices = 0;
-        loaded.traverse((object) => {
-          if (object instanceof THREE.Mesh) {
-            terrainMeshes.push(object);
-            originalMaterials.set(object, object.material);
-            const position = object.geometry.getAttribute("position");
-            geometryVertices += position?.count ?? 0;
+        fail("Terrain GLB parsed but contained no renderable triangle geometry.");
+        return;
+      }
+      scene.add(model);
+      const unscaledBounds = new THREE.Box3().setFromObject(model);
+      elevationCenter = unscaledBounds.getCenter(new THREE.Vector3()).y;
+      appliedExaggeration = 1;
+      applyExaggeration();
+      refreshBounds();
+      flyBaseSpeed = THREE.MathUtils.clamp(footprint() * 0.04, 80, 3000);
+      firstPersonBaseSpeed = THREE.MathUtils.clamp(Math.max(firstPersonClearance() * 0.8, footprint() * 0.006), 20, 900);
+      updateNavigationSpeed();
+      fitView();
+      positionMarker(cursorRef.current);
+      refreshAnalysisPath();
+      applyOverlay(overlayRef.current);
+      modelLoadedAt = performance.now();
+      publishState({
+        phase: "loading",
+        message: "Preparing GPU resources and validating the first terrain frame…",
+        triangles: 0,
+        drawCalls: 0,
+      });
+    };
+
+    const loadTerrainModel = (targetUrl: string, retryCount = 0) => {
+      loader.load(
+        targetUrl,
+        onModelLoaded,
+        (progress) => {
+          if (disposed || fatal || !progress.total) return;
+          const percent = Math.min(100, Math.max(0, Math.round((progress.loaded / progress.total) * 100)));
+          publishState({
+            phase: "loading",
+            message: percent >= 100 ? "Terrain bytes received · preparing GPU resources…" : `Loading persistent terrain LOD… ${percent}%`,
+            triangles: 0,
+            drawCalls: 0,
+          });
+        },
+        (error) => {
+          if (disposed || fatal) return;
+          // Step 1: If sample_image_project 404'd, retry with sample_project
+          if (retryCount === 0 && targetUrl.includes("sample_image_project")) {
+            const fallbackUrl = targetUrl.replace("projects/sample_image_project", "sample_project");
+            loadTerrainModel(fallbackUrl, retryCount + 1);
+            return;
           }
-        });
-        if (terrainMeshes.length === 0 || geometryVertices < 3) {
-          disposeObject3D(loaded);
-          loaded = undefined;
-          terrainMeshes = [];
-          fail("Terrain GLB parsed but contained no renderable triangle geometry.");
-          return;
-        }
-        scene.add(loaded);
-        const unscaledBounds = new THREE.Box3().setFromObject(loaded);
-        elevationCenter = unscaledBounds.getCenter(new THREE.Vector3()).y;
-        appliedExaggeration = 1;
-        applyExaggeration();
-        refreshBounds();
-        flyBaseSpeed = THREE.MathUtils.clamp(footprint() * 0.04, 80, 3000);
-        firstPersonBaseSpeed = THREE.MathUtils.clamp(Math.max(firstPersonClearance() * 0.8, footprint() * 0.006), 20, 900);
-        updateNavigationSpeed();
-        fitView();
-        positionMarker(cursorRef.current);
-        refreshAnalysisPath();
-        applyOverlay(overlayRef.current);
-        modelLoadedAt = performance.now();
-        publishState({
-          phase: "loading",
-          message: "Preparing GPU resources and validating the first terrain frame…",
-          triangles: 0,
-          drawCalls: 0,
-        });
-      },
-      (progress) => {
-        if (disposed || fatal || !progress.total) return;
-        const percent = Math.min(100, Math.max(0, Math.round((progress.loaded / progress.total) * 100)));
-        publishState({
-          phase: "loading",
-          message: percent >= 100 ? "Terrain bytes received · preparing GPU resources…" : `Loading persistent terrain LOD… ${percent}%`,
-          triangles: 0,
-          drawCalls: 0,
-        });
-      },
-      (error) => {
-        fail(`Terrain GLB could not be loaded: ${error instanceof Error ? error.message : String(error)}`);
-      },
-    );
+          // Step 2: If lod0 failed or timed out, retry with lod1
+          if (retryCount <= 1 && targetUrl.includes("terrain-lod0.glb")) {
+            const fallbackUrl = targetUrl.replace("terrain-lod0.glb", "terrain-lod1.glb");
+            loadTerrainModel(fallbackUrl, retryCount + 1);
+            return;
+          }
+          // Step 3: If an Indian region GLB had a network error, retry with /sample_project
+          if (retryCount <= 2 && !targetUrl.includes("sample_project")) {
+            loadTerrainModel("/sample_project/mesh/terrain-lod0.glb", 3);
+            return;
+          }
+          fail(`Terrain GLB could not be loaded: ${error instanceof Error ? error.message : String(error)}`);
+        },
+      );
+    };
+
+    loadTerrainModel(meshUrl);
 
     const resize = () => {
       const width = host.clientWidth;

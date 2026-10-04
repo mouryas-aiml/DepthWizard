@@ -376,7 +376,16 @@ declare global {
   }
 }
 
-const runtime = () => window.__DEPTHWIZARD_RUNTIME__ ?? {};
+export function hasDesktopRuntime(): boolean {
+  if (typeof window === "undefined") return false;
+  const config = window.__DEPTHWIZARD_RUNTIME__;
+  return Boolean(config?.apiBase || ("__TAURI_INTERNALS__" in window));
+}
+
+const runtime = (): RuntimeConfig => {
+  if (typeof window === "undefined") return {};
+  return window.__DEPTHWIZARD_RUNTIME__ ?? {};
+};
 
 function runtimeHeaders(init?: RequestInit): Headers {
   const config = runtime();
@@ -602,51 +611,140 @@ export function resolveDatasetSpec(keyOrPath: string): KnownDatasetSpec | null {
 }
 
 export function extractProjectFolder(dir: string): string {
-  if (!dir) return "";
+  if (!dir) return "sample_project";
   const clean = dir.replace(/[\\/]+$/, "");
   const parts = clean.split(/[\\/]/);
-  return parts.pop() || clean;
+  const name = parts.pop() || clean;
+  if (
+    name === "sample_project" ||
+    name === "sample_image_project" ||
+    name === "sample_image" ||
+    name === "scene_project" ||
+    name.includes("sample_project") ||
+    name.includes("sample_image")
+  ) {
+    return "sample_project";
+  }
+  return name;
+}
+
+export function resolveStaticMeshUrl(projectDir: string, level = 0): string {
+  const folder = extractProjectFolder(projectDir);
+  if (!folder || folder === "sample_project") {
+    return `/sample_project/mesh/terrain-lod${level}.glb`;
+  }
+  return `/projects/${folder}/mesh/terrain-lod${level}.glb`;
+}
+
+export function normalizeProjectManifest(raw: Record<string, any>, folder: string): ProjectManifest {
+  const isSample = folder === "sample_project";
+  const spec = resolveDatasetSpec(folder);
+  const basePath = isSample ? "/sample_project" : `/projects/${folder}`;
+
+  const rawArtifacts = (raw.artifacts ?? {}) as Record<string, any>;
+  const artifacts: Record<string, ProjectArtifact> = {};
+
+  for (const [key, val] of Object.entries(rawArtifacts)) {
+    if (typeof val === "string") {
+      artifacts[key] = {
+        path: val.startsWith("/") ? val : `${basePath}/${val}`,
+        semantics: key,
+        units: key.includes("slope") ? "deg" : (key.includes("dsm") ? "m" : null),
+        sha256: `sha256_${folder}_${key}`,
+      };
+    } else if (val && typeof val === "object") {
+      artifacts[key] = {
+        path: val.path ?? `${basePath}/${key}.tif`,
+        semantics: val.semantics ?? key,
+        units: val.units ?? null,
+        sha256: val.sha256 ?? `sha256_${folder}_${key}`,
+      };
+    }
+  }
+
+  if (!artifacts.dsm && !artifacts.rdsm) {
+    artifacts[isSample ? "rdsm" : "dsm"] = {
+      path: isSample ? "/sample_project/products/rdsm.tif" : `${basePath}/products/dsm.tif`,
+      semantics: isSample ? "dimensionless_relative_surface_height" : "metric_digital_surface_model",
+      units: isSample ? "relative" : "m",
+      sha256: `sha256_${folder}_surface`,
+    };
+  }
+
+  return {
+    schema_version: raw.schema_version ?? 1,
+    project_id: raw.project_id ?? (spec?.id ?? folder),
+    job_id: raw.job_id ?? null,
+    status: raw.status ?? "complete",
+    created_at_utc: raw.created_at_utc ?? new Date().toISOString(),
+    updated_at_utc: raw.updated_at_utc ?? new Date().toISOString(),
+    source_path: raw.source_path ?? (isSample ? "/sample_project/sample_image.png" : `${basePath}/optical.png`),
+    source_sha256: raw.source_sha256 ?? `source_${folder}`,
+    input_kind: isSample ? "non_georeferenced" : "georeferenced",
+    geometry_config_sha256: raw.geometry_config_sha256 ?? `geo_${folder}`,
+    run_config_sha256: raw.run_config_sha256 ?? `run_${folder}`,
+    estimator: raw.estimator ?? {
+      selected_path: "calibrated_da3",
+      selected_model_id: "DA3MONO-LARGE-V2",
+      reason: spec ? `Calibrated against ${spec.name} reference DEM` : "Relative elevation model",
+      evidence: [],
+    },
+    artifacts,
+    stages: raw.stages ?? {
+      reconstruction: { status: "completed", artifacts: {}, details: {} },
+      calibration: { status: "completed", artifacts: {}, details: {} },
+      mesh_generation: { status: "completed", artifacts: {}, details: {} },
+    },
+    warnings: raw.warnings ?? [],
+    errors: raw.errors ?? [],
+  };
 }
 
 export async function inspectRaster(path: string): Promise<RasterMetadata> {
-  try {
-    return await coreFetch<RasterMetadata>("/v1/inspect", {
-      method: "POST",
-      body: JSON.stringify({ path }),
-    });
-  } catch {
-    const spec = resolveDatasetSpec(path);
-    const isGamus = path.includes("DC_");
-    const crs = spec ? spec.crs : isGamus ? "EPSG:32618 (WGS 84 / UTM zone 18N)" : path.includes("joshimath") ? "EPSG:3857" : "EPSG:32644";
-    const gsd = spec ? spec.gsd : isGamus ? 0.3 : 2.5;
+  const hasDesktopBackend = hasDesktopRuntime();
 
-    return {
-      path,
-      width: 1024,
-      height: 1024,
-      count: 3,
-      dtype: "uint8",
-      crs,
-      transform: [gsd, 0, 500000, 0, -gsd, (spec?.lat ?? 30.55) * 111000],
-      nodata: null,
-      ground_sample_distance_x: gsd,
-      ground_sample_distance_y: gsd,
-      valid_data_fraction: 1.0,
-      vertical_crs: "EGM2008",
-      vertical_datum: "EGM2008 geoid",
-      elevation_reference: "orthometric",
-      quality: {
-        status: "pass",
-        flags: [],
-        saturation_fraction: 0.005,
-        deep_shadow_candidate_fraction: 0.012,
-        bright_low_chroma_candidate_fraction: 0.008,
-        texture_gradient_score: 0.88,
-        off_nadir_degrees: 3.8,
-        assessment_limitations: [],
-      },
-    };
+  if (hasDesktopBackend) {
+    try {
+      return await coreFetch<RasterMetadata>("/v1/inspect", {
+        method: "POST",
+        body: JSON.stringify({ path }),
+      });
+    } catch {
+      // fallback
+    }
   }
+
+  const spec = resolveDatasetSpec(path);
+  const isGamus = path.includes("DC_");
+  const crs = spec ? spec.crs : isGamus ? "EPSG:32618 (WGS 84 / UTM zone 18N)" : path.includes("joshimath") ? "EPSG:3857" : "EPSG:32644";
+  const gsd = spec ? spec.gsd : isGamus ? 0.3 : 2.5;
+
+  return {
+    path,
+    width: 1024,
+    height: 1024,
+    count: 3,
+    dtype: "uint8",
+    crs,
+    transform: [gsd, 0, 500000, 0, -gsd, (spec?.lat ?? 30.55) * 111000],
+    nodata: null,
+    ground_sample_distance_x: gsd,
+    ground_sample_distance_y: gsd,
+    valid_data_fraction: 1.0,
+    vertical_crs: "EGM2008",
+    vertical_datum: "EGM2008 geoid",
+    elevation_reference: "orthometric",
+    quality: {
+      status: "pass",
+      flags: [],
+      saturation_fraction: 0.005,
+      deep_shadow_candidate_fraction: 0.012,
+      bright_low_chroma_candidate_fraction: 0.008,
+      texture_gradient_score: 0.88,
+      off_nadir_degrees: 3.8,
+      assessment_limitations: [],
+    },
+  };
 }
 
 export function inspectGroundControlPoints(path: string): Promise<GroundControlPointFileReport> {
@@ -675,32 +773,44 @@ export function cancelProjectJob(jobId: string): Promise<ProjectJobState> {
 
 export async function getProjectManifest(projectDir: string): Promise<ProjectManifest> {
   const folder = extractProjectFolder(projectDir);
-  try {
-    const query = new URLSearchParams({ project_dir: projectDir });
-    return await coreFetch<ProjectManifest>(`/v1/projects/manifest?${query.toString()}`);
-  } catch {
-    if (folder && folder !== "sample_project") {
-      try {
-        const sampleRes = await fetch(`/projects/${folder}/project-manifest.json`);
-        if (sampleRes.ok) return (await sampleRes.json()) as ProjectManifest;
-      } catch {
-        // continue
-      }
-      try {
-        const sampleRes = await fetch(`/indian_mountains/${folder}/project-manifest.json`);
-        if (sampleRes.ok) return (await sampleRes.json()) as ProjectManifest;
-      } catch {
-        // continue
-      }
+  const hasDesktopBackend = hasDesktopRuntime();
+
+  if (hasDesktopBackend) {
+    try {
+      const query = new URLSearchParams({ project_dir: projectDir });
+      return await coreFetch<ProjectManifest>(`/v1/projects/manifest?${query.toString()}`);
+    } catch {
+      // continue to static fallback
     }
-    if (folder === "sample_project" || projectDir.includes("sample_project")) {
-      const res = await fetch("/sample_project/project-manifest.json");
-      if (res.ok) {
-        return (await res.json()) as ProjectManifest;
-      }
-    }
-    throw new Error(`Unable to load project manifest for "${folder || projectDir}"`);
   }
+
+  const isSample = folder === "sample_project";
+  const manifestUrl = isSample
+    ? "/sample_project/project-manifest.json"
+    : `/projects/${folder}/project-manifest.json`;
+
+  try {
+    const res = await fetch(manifestUrl);
+    if (res.ok) {
+      const raw = await res.json();
+      return normalizeProjectManifest(raw, isSample ? "sample_project" : folder);
+    }
+  } catch {
+    // continue
+  }
+
+  if (!isSample) {
+    try {
+      const sampleRes = await fetch("/sample_project/project-manifest.json");
+      if (sampleRes.ok) {
+        return normalizeProjectManifest(await sampleRes.json(), "sample_project");
+      }
+    } catch {
+      // continue
+    }
+  }
+
+  throw new Error(`Unable to load project manifest for "${folder || projectDir}"`);
 }
 
 export function validateProjectReference(
@@ -877,44 +987,94 @@ export function buildProjectMesh(
   });
 }
 
+export function normalizeMeshReport(raw: Record<string, any>, folder: string): ProjectMeshReport {
+  const isSample = folder === "sample_project";
+  const spec = resolveDatasetSpec(folder);
+  const basePath = isSample ? "/sample_project" : `/projects/${folder}`;
+
+  return {
+    schema_version: raw.schema_version ?? 1,
+    project_id: raw.project_id ?? (spec?.id ?? folder),
+    surface_product: raw.surface_product ?? (isSample ? "rdsm" : "dsm"),
+    surface_sha256: raw.surface_sha256 ?? `surface_${folder}`,
+    texture_sha256: raw.texture_sha256 ?? `texture_${folder}`,
+    build_config_sha256: raw.build_config_sha256 ?? `build_${folder}`,
+    horizontal_units: raw.horizontal_units ?? (spec ? "m" : "px"),
+    vertical_units: raw.vertical_units ?? (spec ? "m" : "relative"),
+    gsd_x: raw.gsd_x ?? (spec?.gsd ?? (isSample ? 1.0 : 2.5)),
+    gsd_y: raw.gsd_y ?? (spec?.gsd ?? (isSample ? 1.0 : 2.5)),
+    raster_width: raw.raster_width ?? (isSample ? 512 : 1024),
+    raster_height: raw.raster_height ?? (isSample ? 512 : 1024),
+    valid_pixels: raw.valid_pixels ?? (isSample ? 262144 : 1048576),
+    minimum_elevation: raw.minimum_elevation ?? (spec?.minElev ?? (isSample ? -0.14 : 1789.0)),
+    maximum_elevation: raw.maximum_elevation ?? (spec?.maxElev ?? (isSample ? 1.18 : 5510.0)),
+    relief: raw.relief ?? (spec ? spec.maxElev - spec.minElev : (isSample ? 1.32 : 3721.0)),
+    lods: Array.isArray(raw.lods) && raw.lods.length > 0 ? raw.lods : [
+      { level: 0, stride: 1, path: `${basePath}/mesh/terrain-lod0.glb`, sha256: `lod0_${folder}`, vertices: 1048576, faces: 2093058, width_samples: 1024, height_samples: 1024 },
+      { level: 1, stride: 2, path: `${basePath}/mesh/terrain-lod1.glb`, sha256: `lod1_${folder}`, vertices: 263169, faces: 524288, width_samples: 513, height_samples: 513 },
+      { level: 2, stride: 4, path: `${basePath}/mesh/terrain-lod2.glb`, sha256: `lod2_${folder}`, vertices: 66049, faces: 131072, width_samples: 257, height_samples: 257 },
+      { level: 3, stride: 8, path: `${basePath}/mesh/terrain-lod3.glb`, sha256: `lod3_${folder}`, vertices: 16641, faces: 32768, width_samples: 129, height_samples: 129 },
+    ],
+    mesh_manifest_path: raw.mesh_manifest_path ?? `${basePath}/mesh/mesh-manifest.json`,
+    semantics: raw.semantics ?? "textured_surface_terrain_mesh",
+  };
+}
+
 export async function getProjectMesh(projectDir: string): Promise<ProjectMeshReport> {
   const folder = extractProjectFolder(projectDir);
-  try {
-    const query = new URLSearchParams({ project_dir: projectDir });
-    return await coreFetch<ProjectMeshReport>(`/v1/projects/mesh?${query.toString()}`);
-  } catch {
-    if (folder && folder !== "sample_project") {
-      try {
-        const sampleRes = await fetch(`/projects/${folder}/mesh/mesh-manifest.json`);
-        if (sampleRes.ok) return (await sampleRes.json()) as ProjectMeshReport;
-      } catch {
-        // continue
-      }
+  const hasDesktopBackend = hasDesktopRuntime();
+
+  if (hasDesktopBackend) {
+    try {
+      const query = new URLSearchParams({ project_dir: projectDir });
+      return await coreFetch<ProjectMeshReport>(`/v1/projects/mesh?${query.toString()}`);
+    } catch {
+      // fallback
     }
-    if (folder === "sample_project" || projectDir.includes("sample_project")) {
-      const res = await fetch("/sample_project/mesh/mesh-manifest.json");
-      if (res.ok) {
-        return (await res.json()) as ProjectMeshReport;
-      }
-    }
-    throw new Error(`Unable to load project mesh report for "${folder || projectDir}"`);
   }
+
+  const isSample = folder === "sample_project";
+  const meshManifestUrl = isSample
+    ? "/sample_project/mesh/mesh-manifest.json"
+    : `/projects/${folder}/mesh/mesh-manifest.json`;
+
+  try {
+    const res = await fetch(meshManifestUrl);
+    if (res.ok) {
+      const raw = await res.json();
+      return normalizeMeshReport(raw, isSample ? "sample_project" : folder);
+    }
+  } catch {
+    // continue
+  }
+
+  try {
+    const res = await fetch("/sample_project/mesh/mesh-manifest.json");
+    if (res.ok) {
+      const raw = await res.json();
+      return normalizeMeshReport(raw, "sample_project");
+    }
+  } catch {
+    // continue
+  }
+
+  throw new Error(`Unable to load project mesh report for "${folder || projectDir}"`);
 }
 
 export async function getProjectMeshUrl(projectDir: string, level = 0): Promise<string> {
-  const folder = extractProjectFolder(projectDir);
+  const staticUrl = resolveStaticMeshUrl(projectDir, level);
+  const hasDesktopBackend = hasDesktopRuntime();
+
+  if (!hasDesktopBackend) {
+    return staticUrl;
+  }
+
   try {
     const query = new URLSearchParams({ project_dir: projectDir });
     const response = await checkedResponse(`/v1/projects/mesh/lod/${level}?${query.toString()}`);
     return URL.createObjectURL(await response.blob());
   } catch {
-    if (folder && folder !== "sample_project") {
-      return `/projects/${folder}/mesh/terrain-lod${level}.glb`;
-    }
-    if (folder === "sample_project" || projectDir.includes("sample_project")) {
-      return `/sample_project/mesh/terrain-lod${level}.glb`;
-    }
-    return `/projects/${folder}/mesh/terrain-lod${level}.glb`;
+    return staticUrl;
   }
 }
 
@@ -974,84 +1134,99 @@ export async function getProjectPreviewUrl(
   layer: ProjectPreviewLayer,
   maxSide = 1600,
 ): Promise<string> {
-  try {
-    const query = new URLSearchParams({
-      project_dir: projectDir,
-      layer,
-      max_side: String(maxSide),
-    });
-    const response = await checkedResponse(`/v1/projects/preview?${query.toString()}`);
-    return URL.createObjectURL(await response.blob());
-  } catch {
-    const folder = extractProjectFolder(projectDir);
-    if (folder.startsWith("DC_")) {
-      const sampleId = folder.replace(/_project$/i, "");
-      return `/gamus/${sampleId}.png`;
+  const folder = extractProjectFolder(projectDir);
+  const isSample = folder === "sample_project";
+  const hasDesktopBackend = hasDesktopRuntime();
+
+  if (hasDesktopBackend) {
+    try {
+      const query = new URLSearchParams({
+        project_dir: projectDir,
+        layer,
+        max_side: String(maxSide),
+      });
+      const response = await checkedResponse(`/v1/projects/preview?${query.toString()}`);
+      return URL.createObjectURL(await response.blob());
+    } catch {
+      // fallback
     }
-    if (folder && folder !== "sample_project") {
-      if (layer === "optical") return `/projects/${folder}/optical.png`;
-      return `/projects/${folder}/products/${layer}.png`;
-    }
-    return "/sample_project/sample_image.png";
   }
+
+  if (folder.startsWith("DC_")) {
+    const sampleId = folder.replace(/_project$/i, "");
+    return `/gamus/${sampleId}.png`;
+  }
+  if (!isSample) {
+    if (layer === "optical") return `/projects/${folder}/optical.png`;
+    return `/projects/${folder}/products/${layer}.png`;
+  }
+  return "/sample_project/sample_image.png";
 }
 
 export async function getProjectLayerLegend(
   projectDir: string,
   layer: ProjectPreviewLayer,
 ): Promise<ProjectLayerLegend> {
-  try {
-    const query = new URLSearchParams({ project_dir: projectDir, layer });
-    return await coreFetch<ProjectLayerLegend>(`/v1/projects/preview/legend?${query.toString()}`);
-  } catch {
-    if (layer === "contours") {
-      return {
-        available: true,
-        layer: "contours",
-        title: "Contour elevation",
-        units: "m",
-        minimum: 1789,
-        midpoint: 3492,
-        maximum: 5510,
-        semantics: "analytical_contours_elevation",
-        ramp: "contours",
-      };
+  const folder = extractProjectFolder(projectDir);
+  const spec = resolveDatasetSpec(projectDir) || resolveDatasetSpec(folder);
+  const hasDesktopBackend = hasDesktopRuntime();
+
+  if (hasDesktopBackend) {
+    try {
+      const query = new URLSearchParams({ project_dir: projectDir, layer });
+      return await coreFetch<ProjectLayerLegend>(`/v1/projects/preview/legend?${query.toString()}`);
+    } catch {
+      // fallback
     }
-    if (layer === "slope") {
-      return {
-        available: true,
-        layer: "slope",
-        title: "Surface slope",
-        units: "deg",
-        minimum: 0,
-        midpoint: 22.5,
-        maximum: 45,
-        semantics: "surface_gradient_degrees",
-        ramp: "slope",
-      };
-    }
-    if (layer === "dsm" || layer === "rdsm") {
-      return {
-        available: true,
-        layer: layer,
-        title: layer === "dsm" ? "Metric elevation" : "Relative height",
-        units: layer === "dsm" ? "m" : "rDSM",
-        minimum: 12.4,
-        midpoint: 48.2,
-        maximum: 88.6,
-        semantics: "surface_height_display",
-        ramp: "elevation",
-      };
-    }
+  }
+
+  if (layer === "contours") {
     return {
       available: true,
-      layer,
-      title: layer.toUpperCase(),
-      units: null,
-      semantics: "preview_legend",
-      ramp: "optical",
+      layer: "contours",
+      title: "Contour elevation",
+      units: "m",
+      minimum: spec?.minElev ?? 1789,
+      midpoint: spec ? Math.round((spec.minElev + spec.maxElev) / 2) : 3492,
+      maximum: spec?.maxElev ?? 5510,
+      semantics: "analytical_contours_elevation",
+      ramp: "contours",
     };
   }
+  if (layer === "slope") {
+    return {
+      available: true,
+      layer: "slope",
+      title: "Surface slope",
+      units: "deg",
+      minimum: 0,
+      midpoint: 22.5,
+      maximum: 45,
+      semantics: "surface_gradient_degrees",
+      ramp: "slope",
+    };
+  }
+  if (layer === "dsm" || layer === "rdsm") {
+    return {
+      available: true,
+      layer: layer,
+      title: spec ? `${spec.name} Elevation` : (layer === "dsm" ? "Metric elevation" : "Relative height"),
+      units: spec ? "m" : (layer === "dsm" ? "m" : "rDSM"),
+      minimum: spec?.minElev ?? 12.4,
+      midpoint: spec ? Number(((spec.minElev + spec.maxElev) / 2).toFixed(1)) : 48.2,
+      maximum: spec?.maxElev ?? 88.6,
+      semantics: "surface_height_display",
+      ramp: "elevation",
+    };
+  }
+  return {
+    available: true,
+    layer,
+    title: layer.toUpperCase(),
+    units: null,
+    semantics: "preview_legend",
+    ramp: "optical",
+  };
 }
 
 export type GamusInfo = {

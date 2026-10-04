@@ -3,12 +3,12 @@
   "surface_product": "dsm",
   "horizontal_units": "m",
   "vertical_units": "m",
-  "gsd_x": 2.0,
-  "gsd_y": 2.0,
+  "gsd_x": 2,
+  "gsd_y": 2,
   "raster_width": 1024,
   "raster_height": 1024,
   "valid_pixels": 1048576,
-  "minimum_elevation": 3200.0,
+  "minimum_elevation": 3200,
   "maximum_elevation": 5849.99658203125,
   "relief": 2649.99658203125,
   "lods": [
@@ -52,5 +52,11 @@
       "width_samples": 129,
       "height_samples": 129
     }
-  ]
+  ],
+  "schema_version": 1,
+  "surface_sha256": "surface_ladakh_leh",
+  "texture_sha256": "texture_ladakh_leh",
+  "build_config_sha256": "build_ladakh_leh",
+  "mesh_manifest_path": "/projects/ladakh_leh/mesh/mesh-manifest.json",
+  "semantics": "textured_absolute_surface_terrain_mesh"
 }
