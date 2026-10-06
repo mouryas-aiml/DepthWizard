@@ -31,7 +31,7 @@
 ### Quick Links
 
 - 🌐 **Live Web Application:** [https://depthwizard.vercel.app](https://depthwizard.vercel.app)
-- 📦 **SIH DepthWizard Repository:** [https://github.com/IMG-PROCESS-SAC/SIH-DepthWizard-2026](https://youtu.be/gtwqJwOT4J4?si=gVF09TeXJOYHPiQQ)
+- 📦 **SIH DepthWizard Repository:** [https://github.com/IMG-PROCESS-SAC/SIH-DepthWizard-2026](https://github.com/IMG-PROCESS-SAC/SIH-DepthWizard-2026)
 - 🎥 **Video Explanation:** [YouTube](https://youtu.be/gtwqJwOT4J4?si=gVF09TeXJOYHPiQQ)
 - 📊 **Primary Benchmark Dataset (GAMUS):** [https://huggingface.co/datasets/earthflow/GAMUS](https://huggingface.co/datasets/earthflow/GAMUS)
 - 🛰️ **EarthNets RSI-MMSegmentation Reference:** [https://github.com/EarthNets/RSI-MMSegmentation](https://github.com/EarthNets/RSI-MMSegmentation)
